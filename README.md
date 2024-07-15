@@ -1,6 +1,6 @@
 # ASGCN
 
-## git clone
+## Clone
 If you'd like to clone this project, 
 just run the following command. 
 To include sub-projects, 
