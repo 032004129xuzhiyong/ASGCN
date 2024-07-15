@@ -15,6 +15,7 @@ from mytool import mytorch as mtorch
 from mytool import callback as mcallback
 from mytool import metric as mmetric
 from mytool import plot as mplot
+from mytool import tuner as mtuner
 from datasets.dataset import load_mat
 from typing import *
 
@@ -284,12 +285,12 @@ def parser_args():
     add_public_argument(parser_run)
     parser_run.set_defaults(func=parser_run_func)
     parser_run.add_argument('--run-times','-rt',
-                            default=1,
+                            default=5,
                             type=int,
                             help='run times',
                             dest='run_times')
     parser_run.add_argument('--result-dir','-rd',
-                            default='temp_result/',
+                            default='best/',
                             type=str,
                             help='result dir',
                             dest='result_dir')
