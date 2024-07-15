@@ -19,7 +19,7 @@ bash env.sh
 Here, we provide an implementation of ASGCN in pytorch. 
 The structure of the repository is organized as follows:
 * `config/`: contains the configuration files for the model.
-* `data/`: contains the original data.
+* `data/`: contains the original data but not includes `animals` dataset because of its large size.
 * `datasets/`: contains the code for loading and processing the data.
 * `models/`: contains the implementation of the model.
 * `mytool`: contains the tool scripts.
