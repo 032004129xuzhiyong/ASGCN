@@ -2,7 +2,6 @@
 import copy
 import os
 import argparse
-import optuna
 import random
 import pandas as pd
 import numpy as np
@@ -15,7 +14,6 @@ from mytool import mytorch as mtorch
 from mytool import callback as mcallback
 from mytool import metric as mmetric
 from mytool import plot as mplot
-from mytool import tuner as mtuner
 from datasets.dataset import load_mat
 from typing import *
 
@@ -182,62 +180,6 @@ def train_and_save_with_besthp(best_args, if_plot=False):
     tool.save_yaml_args(save_conf_path, best_args)
 
 
-def objective(trial: optuna.trial.Trial, extra_args):
-    """
-    Parameters:
-    trial (optuna.trial.Trial): The trial object from the Optuna library.
-    extra_args (dict): A dictionary of extra arguments for the model training.
-
-    Returns:
-    float: The value of the monitored metric for the current trial.
-    """
-    # Create a deep copy of the extra arguments to avoid modifying the original dictionary
-    args = copy.deepcopy(extra_args)
-
-    # Modify the arguments with the current trial's parameters
-    args = tool.modify_dict_with_trial(args, trial)
-
-    # Set the trial object and the tuner flag in the arguments
-    args['trial'] = trial
-    args['tuner_flag'] = True
-
-    # set seed
-    if 'seed' not in args.keys():
-        args['seed'] = 42
-    random.seed(args['seed'])
-    np.random.seed(args['seed'])
-    torch.manual_seed(args['seed'])
-    torch.cuda.manual_seed(args['seed'])
-
-    # Run the model training for the first time and get the logs
-    data = load_mat(**args['dataset_args'])  # load data
-    first_logs = train_one_args(args,data)
-
-    # Run the model training for other times
-    args['tuner_flag'] = False
-    if isinstance(args['tuner_n_repeats'],int):
-        args['tuner_n_repeats'] = max(args['tuner_n_repeats'], 1)
-    else:
-        args['tuner_n_repeats'] = 1
-    repeat_df_list = train_times(args, args['tuner_n_repeats']-1, data)
-    repeat_df_list.append(pd.DataFrame(first_logs))
-
-    # compute the mean metric/loss
-    mean_logs = {}
-    mean_, std_ = mean_std_with_df_list(repeat_df_list, 'metric', 'max')
-    mean_logs.update(mean_)
-    mean_, std_ = mean_std_with_df_list(repeat_df_list, 'loss', 'min')
-    mean_logs.update(mean_)
-
-    # Set the mean logs and the configuration as user attributes of the trial
-    trial.set_user_attr('mean_logs', mean_logs)
-    args.pop('trial')
-    trial.set_user_attr('config', args)
-
-    # Return the value of the monitored metric for the current trial
-    return mean_logs[args['tuner_monitor']]
-
-
 def expand_parser_and_change_args(args):
     parser_args = vars(args)
     parser_args.pop('func')
@@ -275,11 +217,6 @@ def parser_args():
                             default=False,
                             help='whether to show logs')
 
-    # tuner
-    parser_tuner = subparsers.add_parser('tuner')
-    add_public_argument(parser_tuner)
-    parser_tuner.set_defaults(func=parser_tuner_func)
-
     # run
     parser_run = subparsers.add_parser('run')
     add_public_argument(parser_run)
@@ -295,80 +232,8 @@ def parser_args():
                             help='result dir',
                             dest='result_dir')
 
-    # grid search
-    parser_grid = subparsers.add_parser('grid')
-    add_public_argument(parser_grid)
-    parser_grid.set_defaults(func=parser_grid_func)
-    parser_grid.add_argument('--grid-search-space','-gss',
-                             nargs='*',
-                             default=None,
-                             help='grid search space. e.g. dataset_args.topk=[10,20,30] model_args.hid_dim=[64,128]',
-                             dest='grid_search_space')
-    parser_grid.add_argument('--search-space-simultaneously','-sss',
-                             action='store_true',
-                             default=False,
-                             help='search space simultaneously',
-                             dest='search_space_simultaneously')
-
     args = parser.parse_args()
     args.func(args)
-
-
-def parser_tuner_func(args):
-    expand_args = expand_parser_and_change_args(args)
-
-    for conf in expand_args['config_paths']:
-        yaml_args = benedict.from_yaml(conf)
-
-        # update parser args
-        expand_args = tool.remove_dict_None_value(expand_args)  # clean None value
-        yaml_args.deepupdate(expand_args)
-
-        # flag tuner
-        yaml_args['tuner_flag'] = False
-
-        args = yaml_args.dict()
-        if tool.has_hyperparameter(args):
-            # tuner
-            args['tuner_flag'] = True
-
-            if 'loss' in args['tuner_monitor']:
-                direction = 'minimize'
-            else:
-                direction = 'maximize'
-            study = optuna.create_study(direction=direction,
-                                        study_name=tool.get_basename_split_ext(args['dataset_args']['mat_path']),
-                                        storage=optuna.storages.RDBStorage('sqlite:///./tuner.db',
-                                                                           heartbeat_interval=60,
-                                                                           grace_period=120,
-                                                                           failed_trial_callback=optuna.storages.RetryFailedTrialCallback(3)),
-                                        load_if_exists=True,
-                                        pruner=mtuner.CombinePruner([
-                                            optuna.pruners.MedianPruner(n_warmup_steps=30),
-                                            optuna.pruners.PercentilePruner(0.1, n_warmup_steps=30)
-                                        ]),
-                                        #pruner=optuna.pruners.NopPruner(),
-                                        sampler=optuna.samplers.TPESampler())
-            study.optimize(lambda trial: objective(trial, args),
-                           n_trials=args['tuner_n_trials'],
-                           gc_after_trial=True,
-                           show_progress_bar=True,
-                           callbacks=[mcallback.StudyStopWhenTrialKeepBeingPrunedCallback(20)])
-
-            # get best args
-            best_hp = study.best_params
-            # print
-            for i in range(5):
-                print('*' * 50)
-            tool.print_dicts_tablefmt([best_hp], ['Best HyperParameters!!'])
-            for i in range(5):
-                print('*' * 50)
-
-            # train times with best args
-            best_args = tool.modify_dict_with_trial(args, study.best_trial)
-            train_and_save_with_besthp(best_args, if_plot=True)
-        else:
-            raise ValueError('No hyperparameter to tune!!')
 
 
 def parser_run_func(args):
@@ -393,153 +258,6 @@ def parser_run_func(args):
             best_args['best_trial'] = expand_args['run_times']
             best_args['best_trial_save_dir'] = expand_args['result_dir']
             train_and_save_with_besthp(best_args, if_plot=False)
-
-
-def parser_grid_func(args):
-    parser_args = vars(args)
-    grid_search_space = parser_args.pop('grid_search_space')  # List
-    expand_args = expand_parser_and_change_args(args)
-
-    # get grid search space
-    # grid_search_space: List[str] e.g. ['dataset_args.topk=[10,20,30]','model_args.hid_dim=[64,128]']
-    # in grid_search_space, key is full name, value is list
-    # but in parser_grid_search_space, key is short name, value is list
-    parser_grid_search_space = {}
-    if grid_search_space is not None:
-        for grid_search_arg in grid_search_space:
-            k, v = grid_search_arg.split('=')
-            parser_grid_search_space[k.split('.')[-1]] = eval(v)
-
-    for conf in expand_args['config_paths']:
-        # best/dataset/conf.yaml It has no hyperparameter to tune
-        yaml_args = benedict.from_yaml(conf)
-
-        # update parser args
-        # update ahead of transform_dict_to_search_space to remove other change_args
-        expand_args = tool.remove_dict_None_value(expand_args)
-        yaml_args.deepupdate(expand_args)
-
-        if not tool.has_hyperparameter(yaml_args.dict()):
-            if grid_search_space is not None:
-                if len(grid_search_space) > 1 and yaml_args['search_space_simultaneously']:
-                    # search space simultaneously
-                    for grid_search_arg in grid_search_space:
-                        k, v = grid_search_arg.split('=')
-                        # add something in location which will be searched in grid search.
-                        # It is a placehold, and will be replaced by grid search.
-                        v = eval(v)
-                        if isinstance(v[0], int):
-                            yaml_args[k] = {'type': 'int', 'low': 0, 'high': 10}
-                        elif isinstance(v[0], float):
-                            yaml_args[k] = {'type': 'float', 'low': 0.0, 'high': 10.0}
-                        elif isinstance(v[0], str):
-                            yaml_args[k] = {'type': 'categorical', 'choices': v}
-                    # now yaml_args has hyperparameter to tune
-                    # tuner
-                    yaml_args['tuner_flag'] = True
-                    args = yaml_args.dict()
-                    if 'loss' in args['tuner_monitor']:
-                        direction = 'minimize'
-                    else:
-                        direction = 'maximize'
-                    # change study_name
-                    # because simultaneous search space can be not compatible with separate search space
-                    study_name = 'grid_'+tool.get_basename_split_ext(args['dataset_args']['mat_path']) + '_simultaneously'
-                    study = optuna.create_study(direction=direction,
-                                                study_name=study_name,
-                                                storage=optuna.storages.RDBStorage('sqlite:///./tuner.db',
-                                                                                   heartbeat_interval=60,
-                                                                                   grace_period=120,
-                                                                                   failed_trial_callback=optuna.storages.RetryFailedTrialCallback(3)),
-                                                load_if_exists=True,
-                                                pruner=optuna.pruners.NopPruner(),
-                                                sampler=optuna.samplers.GridSampler(parser_grid_search_space))
-                    study.optimize(lambda trial: objective(trial, args),
-                                   n_trials=99999,
-                                   gc_after_trial=True,
-                                   show_progress_bar=True,
-                                   callbacks=[mcallback.StudyStopWhenTrialKeepBeingPrunedCallback(20)])
-                else:
-                    # separate parser_grid_search_space to many search space
-                    # then search space one by one
-                    for grid_search_arg in grid_search_space:
-                        k, v = grid_search_arg.split('=')
-                        # add something in location which will be searched in grid search.
-                        # It is a placehold, and will be replaced by grid search.
-                        v = eval(v)
-                        cur_sep_yaml_args = copy.deepcopy(yaml_args)
-                        if isinstance(v[0], int):
-                            cur_sep_yaml_args[k] = {'type': 'int', 'low': 0, 'high': 10}
-                        elif isinstance(v[0], float):
-                            cur_sep_yaml_args[k] = {'type': 'float', 'low': 0.0, 'high': 10.0}
-                        elif isinstance(v[0], str):
-                            cur_sep_yaml_args[k] = {'type': 'categorical', 'choices': v}
-                        # now cur_sep_yaml_args has hyperparameter to tune
-                        # note: cur_sep_yaml_args is a copy of yaml_args and it has only one hyperparameter to tune
-                        # tuner
-                        cur_sep_yaml_args['tuner_flag'] = True
-                        cur_sep_parser_grid_search_space = {k.split('.')[-1]: v}
-                        args = cur_sep_yaml_args.dict()
-                        if 'loss' in args['tuner_monitor']:
-                            direction = 'minimize'
-                        else:
-                            direction = 'maximize'
-                        study = optuna.create_study(direction=direction,
-                                                    study_name='grid_'+tool.get_basename_split_ext(args['dataset_args']['mat_path']),
-                                                    storage=optuna.storages.RDBStorage('sqlite:///./tuner.db',
-                                                                                       heartbeat_interval=60,
-                                                                                       grace_period=120,
-                                                                                       failed_trial_callback=optuna.storages.RetryFailedTrialCallback(3)),
-                                                    load_if_exists=True,
-                                                    pruner=optuna.pruners.NopPruner(),
-                                                    sampler=optuna.samplers.GridSampler(cur_sep_parser_grid_search_space))
-                        study.optimize(lambda trial: objective(trial, args),
-                                       n_trials=99999,
-                                       gc_after_trial=True,
-                                       show_progress_bar=True,
-                                       callbacks=[mcallback.StudyStopWhenTrialKeepBeingPrunedCallback(20)])
-            else:
-                raise ValueError('No hyperparameter to tune!!')
-        else:
-            # yaml file has hyperparameter to tune
-            if grid_search_space is not None:
-                raise ValueError('yaml file has hyperparameter to tune, grid_search_space should be None!!')
-
-            search_grid_num = len(yaml_args.search('type',in_keys=True,in_values=False,exact=True,case_sensitive=True))
-            if search_grid_num > 1 and not yaml_args['search_space_simultaneously']:
-                raise ValueError('yaml file has more than one hyperparameter to tune, '
-                                 'search_space_simultaneously should be True!!')
-            if search_grid_num > 1:
-                print('yaml file has more than one hyperparameter to grid search!!')
-
-            # tuner
-            yaml_args['tuner_flag'] = True
-            parser_grid_search_space = tool.transform_dict_to_search_space(yaml_args.dict())
-            args = yaml_args.dict()
-            if 'loss' in args['tuner_monitor']:
-                direction = 'minimize'
-            else:
-                direction = 'maximize'
-            # change study_name
-            # because simultaneous search space can be not compatible with separate search space
-            if search_grid_num > 1:
-                study_name = 'grid_'+tool.get_basename_split_ext(args['dataset_args']['mat_path']) + '_simultaneously'
-            else:
-                study_name = 'grid_'+tool.get_basename_split_ext(args['dataset_args']['mat_path'])
-            study = optuna.create_study(direction=direction,
-                                        study_name=study_name,
-                                        storage=optuna.storages.RDBStorage('sqlite:///./tuner.db',
-                                                                           heartbeat_interval=60,
-                                                                           grace_period=120,
-                                                                           failed_trial_callback=optuna.storages.RetryFailedTrialCallback(3)),
-                                        load_if_exists=True,
-                                        pruner=optuna.pruners.NopPruner(),
-                                        sampler=optuna.samplers.GridSampler(parser_grid_search_space))
-            study.optimize(lambda trial: objective(trial, args),
-                           n_trials=99999,
-                           gc_after_trial=True,
-                           show_progress_bar=True,
-                           callbacks=[mcallback.StudyStopWhenTrialKeepBeingPrunedCallback(20)])
 
 
 if __name__ == '__main__':
