@@ -269,10 +269,6 @@ def parser_args():
                             default=None,
                             help='change args. e.g. dataset_args.topk=10 model_args.hid_dim=64',
                             dest='change_args')
-        parser.add_argument('--seed',
-                            default=42,
-                            type=int,
-                            help='seed')
         parser.add_argument('--quiet','-q',
                             action='store_true',
                             default=False,
