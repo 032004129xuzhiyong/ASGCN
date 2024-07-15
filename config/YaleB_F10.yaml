@@ -1,0 +1,58 @@
+#tuner
+tuner_monitor: val_metric_acc
+tuner_n_trials: 25
+tuner_n_repeats: 5
+tuner_flag: False
+best_trial: 5
+best_trial_save_dir: best/
+
+#data
+dataset_args:
+  mat_path: data/YaleB_F10.mat                   #
+  topk: 6
+  train_ratio: 0.1
+
+#model
+model_class_args:
+  module_path: models.model
+  class_name: ASGCN
+model_args:                     #
+  n_layer: 55
+  hid_dim: 48
+  alpha: 0.1 #h0
+  lamda: 0.5
+
+
+optimizer_class_args:
+  module_path: torch.optim
+  class_name: Adam
+optimizer_args:
+  lr: 0.001
+scheduler_class_args:
+  module_path: torch.optim.lr_scheduler
+  class_name: ReduceLROnPlateau
+scheduler_args:
+  mode: min
+  factor: 0.3
+  patience: 10
+  min_lr: 1.0e-8
+  verbose: False
+scheduler_monitor: val_loss
+
+
+
+#training
+seed: 87
+device: cuda
+epochs: 1500
+quiet: False
+dfcallback_args:
+  df_save_path: ./tables/YaleB_F10.csv
+tbwriter_args:
+  log_dir: ./logs/YaleB_F10
+earlystop_args:
+  checkpoint_dir: ./checkpoint/YaleB_F10
+  monitor: val_metric_acc
+  patience: 100
+  restore_best_weights: True
+  save_best_only: True
