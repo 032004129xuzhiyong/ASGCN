@@ -392,7 +392,7 @@ def parser_run_func(args):
             best_args = args
             best_args['best_trial'] = expand_args['run_times']
             best_args['best_trial_save_dir'] = expand_args['result_dir']
-            train_and_save_with_besthp(best_args, if_plot=True)
+            train_and_save_with_besthp(best_args, if_plot=False)
 
 
 def parser_grid_func(args):
