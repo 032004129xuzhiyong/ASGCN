@@ -1,11 +1,3 @@
-#tuner
-tuner_monitor: val_metric_acc
-tuner_n_trials: 25
-tuner_n_repeats: 5
-tuner_flag: False
-best_trial: 5
-best_trial_save_dir: best/
-
 #data
 dataset_args:
   mat_path: data/WebKB.mat                   #
@@ -46,10 +38,6 @@ seed: 4
 device: cuda
 epochs: 1500
 quiet: False
-dfcallback_args:
-  df_save_path: ./tables/WebKB.csv
-tbwriter_args:
-  log_dir: ./logs/WebKB
 earlystop_args:
   checkpoint_dir: ./checkpoint/WebKB
   monitor: val_metric_acc
