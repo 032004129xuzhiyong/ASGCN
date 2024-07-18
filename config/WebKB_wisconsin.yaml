@@ -11,7 +11,7 @@ model_class_args:
 model_args:                  #
   n_layer: 3
   hid_dim: 48
-  alpha: 0.1 #h0
+  alpha: 0.3 #h0
   lamda: 0.5
 
 
