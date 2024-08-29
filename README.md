@@ -1,4 +1,4 @@
-# ASGCN
+# Attention-Based Stackable Graph Convolutional Network for Multi-View Learning
 
 ## Clone
 If you'd like to clone this project, 
@@ -36,3 +36,17 @@ python run.py run -cps config/YaleB_F10.yaml -q
 ```
 At the end of the run, the `best/` directory will appear, 
 and the results of the run are stored in the `conf.yaml` file (e.g., `best/YaleB_F10/conf.yaml`).
+
+## Cite
+Cite our paper if you use this code in your own work:
+```
+@article{xu_attention-based_2024,
+title = {Attention-based stackable graph convolutional network for multi-view learning},
+volume = {180},
+doi = {10.1016/j.neunet.2024.106648},
+journal = {Neural Networks},
+author = {Xu, Zhiyong and Chen, Weibin and Zou, Ying and Fang, Zihan and Wang, Shiping},
+year = {2024},
+pages = {106648},
+}
+```
