@@ -39,7 +39,7 @@ and the results of the run are stored in the `conf.yaml` file (e.g., `best/YaleB
 
 ## Cite
 Cite our paper if you use this code in your own work:
-```
+```bibtex
 @article{xu_attention-based_2024,
 title = {Attention-based stackable graph convolutional network for multi-view learning},
 volume = {180},
